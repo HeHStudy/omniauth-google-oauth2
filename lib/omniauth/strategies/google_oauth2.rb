@@ -131,6 +131,33 @@ module OmniAuth
         }).parsed
         raw_response['issued_to'] == options.client_id
       end
+
+      # Patch for a bug in the omniauth-google-oauth2 0.2.6 gem. Getting Oauth
+      # tokens from Google is a two-step process. First, a one-time auth code
+      # is generated, and returned in the redirect URL like so:
+      #   https://localhost.hehtech.io/auth/google_fit/callback?state=BLAH&code=BLAH
+      # then, that code is exchanged for an access token and a refresh token, which
+      # we can use subsequently to pull Google Fit data each night. The below snippet
+      # of code ensures the one-time auth code is actually passed to Omniauth so that
+      # we can get the refresh and access tokens.
+      #
+      # We can remove this patch once Issue 66 below is fixed, and we upgrade
+      # the omniauth-google-oauth2 gem:
+      #   https://github.com/intridea/omniauth-oauth2/issues/66
+      def callback_phase_with_json
+        # Doing the same thing as Rails controllers do, giving uniform access to GET, POST and JSON params
+        # reqest.params contains only GET and POST params as a hash
+        # env[..] contains JSON, XML, YAML params as a hash
+        # see ActionDispatch::Http::Parameters#parameters
+        parsed_params = env['action_dispatch.request.request_parameters']
+        if parsed_params
+          request.params['code'] = parsed_params['code'] if parsed_params['code']
+          request.params['access_token'] = parsed_params['access_token'] if parsed_params['access_token']
+          request.params['id_token'] = parsed_params['id_token'] if parsed_params['id_token'] # used by Google
+        end
+        callback_phase_without_json
+      end
+    alias_method_chain :callback_phase, :json
     end
   end
 end
